@@ -143,17 +143,30 @@ class DowntimeMinWithoutLookahead(SimulationBase):  # noqa: D101
             C = beta / S[i] * 60
             return (A * C + B * C) * model.x[i, j]
 
-        def queueing_time(model: ConcreteModel, i: int, j: int) -> float:
-            return model.queueing_time_aux[i, j] + (
-                sum(
-                    charging_time(model, i, v.id)
-                    for v in vehicles
-                    if id_reverse_map[v.id]
-                    in d_matrix_asc_sorted[
-                        i, N[i] : vehicle_index_in_sorted_dist_matrix[i, j]
-                    ]
-                )
-                / C[i]
+        # Vehicle j queues behind every vehicle that is closer to station i and does not
+        # find a free plug there: positions N[i] up to (excluding) its own in the
+        # distance ranking. Summed over all j, the charging time of the vehicle at a
+        # position counts once for every vehicle queueing behind it. Counting that up
+        # front keeps the objective linear in the number of vehicles instead of quadratic.
+        n_vehicles = len(vehicles)
+        queue_weight = {}
+        for i in CSs:
+            followers = np.zeros(n_vehicles + 1)
+            for rank in range(n_vehicles):
+                start, stop, _ = slice(N[i.cs_id], rank).indices(n_vehicles)
+                if start < stop:
+                    followers[start] += 1
+                    followers[stop] -= 1
+            followers = np.cumsum(followers[:-1])
+            for position, vehicle_index in enumerate(d_matrix_asc_sorted[i.cs_id]):
+                queue_weight[i.cs_id, vehicles[vehicle_index].id] = followers[position]
+
+        def total_queueing_time(model: ConcreteModel) -> float:
+            return sum(
+                model.queueing_time_aux[i, j]
+                + queue_weight[i, j] / C[i] * charging_time(model, i, j)
+                for i in model.CSs
+                for j in model.vehicles
             )
 
         def queueing_time_aux_rule1(model, i, j):  # noqa: ANN001, ANN202
@@ -173,12 +186,13 @@ class DowntimeMinWithoutLookahead(SimulationBase):  # noqa: D101
         # minimizing sum of (driving_time + queue_time + charging_time) for all vehicles + a high penalty to missed demands
         # we enforce priority of low SOC vehicles by scaling a penalty of cumulated distance sum
         def objective_rule(model):  # noqa: ANN001, ANN202
-            return sum(
-                driving_time(model, i, j)
-                + charging_time(model, i, j)
-                + queueing_time(model, i, j)
-                for i in model.CSs
-                for j in model.vehicles
+            return (
+                sum(
+                    driving_time(model, i, j) + charging_time(model, i, j)
+                    for i in model.CSs
+                    for j in model.vehicles
+                )
+                + total_queueing_time(model)
             ) + sum(
                 (1 - SoC[j])  # 1-SOC of vehicle j
                 * rho  # large number O_O
