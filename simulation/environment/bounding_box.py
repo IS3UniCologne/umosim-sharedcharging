@@ -49,8 +49,8 @@ def load_or_infer_bounding_box(
     ----------
     bbox_path : Path or None
         Optional path to ``bounding_box.geojson``. When ``None``, the bounding
-        polygon is inferred from the convex hull of all demand and supply
-        hex centroids.
+        polygon is the convex hull of the corners of all demand and supply
+        hexagons, so the centre of each hexagon is inside it.
     demand_hex_ids : set of str
         Origin and destination hex IDs from the demand parquet.
     supply_hex_ids_by_path : dict of (Path, set of str)
@@ -67,15 +67,17 @@ def load_or_infer_bounding_box(
         bbox_df = gpd.read_file(bbox_path)
         if bbox_df.crs is None:
             logger.warning("Bounding box CRS is None. Defaulting to EPSG:4326.")
-            bbox_df.set_crs("epsg:4326", inplace=True)
+            bbox_df = bbox_df.set_crs("epsg:4326")
         return bbox_df
 
     logger.info("No bounding_box.geojson found. Inferring from demand + supply data.")
     hex_ids = set(demand_hex_ids)
     for supply_hexes in supply_hex_ids_by_path.values():
         hex_ids |= supply_hexes
-    latlngs = [h3.cell_to_latlng(hid) for hid in hex_ids]
-    hull = MultiPoint([(lng, lat) for lat, lng in latlngs]).convex_hull
+    # a hull through the centres puts the corner hexagons on its edge and h3 drops them
+    hull = MultiPoint(
+        [(lng, lat) for hid in hex_ids for lat, lng in h3.cell_to_boundary(hid)]
+    ).convex_hull
     return gpd.GeoDataFrame({"geometry": [hull]}, crs="epsg:4326")
 
 

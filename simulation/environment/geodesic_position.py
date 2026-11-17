@@ -21,8 +21,6 @@ from simulation.helper.types import RegionId
 from .position import Position
 
 if TYPE_CHECKING:
-    from shapely import Geometry
-
     from simulation.context.simulation_context import SimulationContext
 
 
@@ -163,10 +161,3 @@ class GeodesicPosition(Position):
             self._hex_id_by_resolution[resolution] = self._compute_hex_id(resolution)
 
         return RegionId(self._hex_id_by_resolution[resolution])
-
-    def is_in_geometry(self, geometry: Geometry) -> bool:
-        """Return whether this position intersects geometry."""
-        if self._geometry.intersects(geometry):
-            return True
-        else:
-            return False
