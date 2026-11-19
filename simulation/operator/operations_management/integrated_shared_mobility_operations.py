@@ -299,6 +299,7 @@ class IntegratedSharedMobilityOperations(Operations):  # noqa: D101
                                     distance=relocation_distance,
                                     vehicle_type=type,
                                     vehicle_fleet=self._operator.fleet,
+                                    vehicle_relocation_velocity_mm=self._vehicle_relocation_velocity,
                                 )
 
                                 composite_job.append_job(relocation_job)
@@ -332,6 +333,7 @@ class IntegratedSharedMobilityOperations(Operations):  # noqa: D101
                                 distance=relocation_distance,
                                 vehicle_type=type,
                                 vehicle_fleet=self._operator.fleet,
+                                vehicle_relocation_velocity_mm=self._vehicle_relocation_velocity,
                             )
 
                             # Schedule to Queue
@@ -795,7 +797,9 @@ class IntegratedSharedMobilityOperations(Operations):  # noqa: D101
 
                 # Get Distance To All Other Regions
                 sub_distance_matrix = self._distance_matrix[[next_hex_id]].reset_index()
-                sub_distance_matrix.rename(columns={"index": "hex_id"}, inplace=True)
+                sub_distance_matrix = sub_distance_matrix.rename(
+                    columns={"index": "hex_id"}
+                )
 
                 # Merge Sub Distance Matrix of selected Region with Relocation Plan
                 # We obtain for the current hexagon a list of all hexagons along with their current vehicle supply
@@ -1123,14 +1127,14 @@ class IntegratedSharedMobilityOperations(Operations):  # noqa: D101
         # Get Vehicle Supply per Hexagon
         supply = vehicle_fleet.supply_per_region()
         supply_df = pd.DataFrame(supply).T.reset_index()
-        supply_df.rename(columns={"index": "hex_id"}, inplace=True)
+        supply_df = supply_df.rename(columns={"index": "hex_id"})
 
         # Get Low SoC Vehicle Supply per Hexagon
         low_soc_supply = vehicle_fleet.vehicles_to_be_charged_per_region(
             self._state_of_charge_threshold
         )
         df_low_soc = pd.DataFrame(low_soc_supply).T.reset_index()
-        df_low_soc.rename(columns={"index": "hex_id"}, inplace=True)
+        df_low_soc = df_low_soc.rename(columns={"index": "hex_id"})
 
         # Get Expected Demand (Delta) per Hexagon
         expected_demand = self.aggregate_delta_demand(demand_monitor)
@@ -1140,7 +1144,7 @@ class IntegratedSharedMobilityOperations(Operations):  # noqa: D101
         fleet_state = fleet_state.merge(
             df_low_soc, how="outer", on="hex_id", suffixes=("", "_Low_SoC")
         )
-        fleet_state.fillna(0, inplace=True)
+        fleet_state = fleet_state.fillna(0)
 
         # Calculate Residual Supply for each vehicle type
         for vehicle in self._available_vehicle_types:
